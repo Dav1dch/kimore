@@ -3,10 +3,10 @@ import numpy as np
 import pandas as pd
 import os
 from torch.utils.data import Dataset, DataLoader
-from models.RawTransformerAndLSTM import get_net
+from models.PlanGenerateNet import get_net
 from torch import nn
 
-trian_lines = 69
+train_lines = 69
 test_lines = 30
 
 def read_lines(data_root):
@@ -15,7 +15,7 @@ def read_lines(data_root):
     if 'test' in txt_file:
         lines = test_lines
     elif 'train' in txt_file:
-        lines = trian_lines
+        lines = train_lines
     else:
         lines = -1
     with open(txt_file) as f:

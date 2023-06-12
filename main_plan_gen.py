@@ -6,7 +6,8 @@ import os
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from models.RawTransformerAndLSTM import LSTMTaggerSep, TransformerTraggerSeq, KimoreFusionModel
+# from models.RawTransformerAndLSTM import LSTMTaggerSep, TransformerTraggerSeq, KimoreFusionModel
+from models.PlanGenerateNet import LSTMTaggerSep, TransformerTraggerSeq, KimoreFusionModel
 import torch.optim as optim
 from loss import Shrinkage_loss, nn
 from pck_metrics import keypoint_pck_accuracy
@@ -22,7 +23,7 @@ def point_change(raw_xyz, dim=3):
 
 def run(mode='train'):
     path_root = "../Kimore"
-    device = torch.device("cuda:0")
+    device = torch.device("mps")
     if mode == 'train':
         train_dataset = PoseDataset(path_root, mode=mode)
         train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=8)

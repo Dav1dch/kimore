@@ -13,7 +13,7 @@ from pck_metrics import keypoint_pck_accuracy
 
 def main():
     path_root = "../Kimore"
-    device = torch.device("cuda:0")
+    device = torch.device("mps")
     num_layer = 4
     input_embeddings = 256
     hidden_embeddings = 128
