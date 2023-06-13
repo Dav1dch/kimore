@@ -23,7 +23,7 @@ def point_change(raw_xyz, dim=3):
 
 def run(mode='train'):
     path_root = "../Kimore"
-    device = torch.device("mps")
+    device = torch.device("cuda")
     if mode == 'train':
         train_dataset = PoseDataset(path_root, mode=mode)
         train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=False, num_workers=8)
@@ -44,11 +44,13 @@ def run(mode='train'):
     model = KimoreFusionModel(input_embeddings, hidden_embeddings, num_layers = num_layer)
     model = model.to(device)
 
-    learning_rate = 0.001
+    learning_rate = 0.0001
     momentum = 0.95
     weight_decay = 1e-4
     scheduler_gamma = 0.95
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, scheduler_gamma)
 
     shrinkage_a = 5
@@ -58,6 +60,7 @@ def run(mode='train'):
     best_loss = 1000
 
     point_dim = 3
+    torch.autograd.set_detect_anomaly = True
 
     if mode == 'train':
         model.train()
@@ -81,6 +84,7 @@ def run(mode='train'):
             return False
         
         sum_loss = 0.0
+
         print("The epoch is: ")
         print(epoch)
         for i, data in enumerate(data_iter):
@@ -105,6 +109,11 @@ def run(mode='train'):
             gt_pred_xyz_points_list = []
             pred_vel_points_list = []
             gt_pred_vel_points_list = []
+
+            losssum = 0
+            n = 0
+            losses_xyz = []
+            losses_vel = []
 
             loss = torch.tensor(0.0, device = device, requires_grad=True)
             loss_xyz = torch.tensor(0.0, device = device, requires_grad=True)
@@ -150,6 +159,7 @@ def run(mode='train'):
                 # human_robot_xyz_merge = robot_xyz_velocity_merge[None, :]
                 human_xyz_single = human_xyz_single[None, :]
                 preds_xyz, preds_vel = model(robot_xyz_velocity_merge)
+                # print(preds_xyz)
 
                 preds_xyz = preds_xyz.squeeze()
                 preds_vel = preds_vel.squeeze()
@@ -159,25 +169,84 @@ def run(mode='train'):
 
                 ground_truth_xyz_list.append(ground_truth_xyz)
                 ground_truth_vel_list.append(ground_truth_velocity)
-
-            N = 0
-            
-            for j in range(len(output_pred_xyz_list)):
-                N += 1
-                loss_xyz = loss_xyz + criterion(output_pred_xyz_list[j], ground_truth_xyz_list[j])
-                loss_vel = loss_vel + criterion(output_pred_vel_list[j], ground_truth_vel_list[j])
+                losses_xyz.append(criterion(output_pred_xyz_list[j], ground_truth_xyz_list[j]))
+                losses_vel.append(criterion(output_pred_vel_list[j], ground_truth_vel_list[j]))
                 pred_xyz_points_list.append(output_pred_xyz_list[j].cpu().detach().numpy())
                 pred_vel_points_list.append(output_pred_vel_list[j].cpu().detach().numpy())
                 gt_pred_xyz_points_list.append(ground_truth_xyz_list[j].cpu().detach().numpy())
                 gt_pred_vel_points_list.append(ground_truth_vel_list[j].cpu().detach().numpy())
+                if mode == 'train':
+                    if j != 0 and (j % 32 == 0 or j == human_pose_numpy.shape[1] - 1):
+                        n += 1
+                        # loss_xyz = loss_xyz + criterion(torch.Tensor(output_pred_xyz_list[j-8:j]), torch.Tensor(ground_truth_xyz_list[j-8:j])) / 8
+                        # loss_vel = loss_vel + criterion(torch.Tensor(output_pred_vel_list[j-8:j]), torch.Tensor(ground_truth_vel_list[j-8:j])) / 8
+                        # pred_xyz_points_list.extend(torch.Tensor(output_pred_xyz_list[j-8:j]).cpu().detach().numpy())
+                        # pred_vel_points_list.extend(torch.Tensor(output_pred_vel_list[j-8:j]).cpu().detach().numpy())
+                        # gt_pred_xyz_points_list.extend(torch.Tensor(ground_truth_xyz_list[j-8:j]).cpu().detach().numpy())
+                        # gt_pred_vel_points_list.extend(torch.Tensor(ground_truth_vel_list[j-8:j]).cpu().detach().numpy())
+                        # for k in range(j-8, j):
+                        #     print(k)
+                        #     losses_xyz.append(criterion(output_pred_xyz_list[k], ground_truth_xyz_list[k]))
+                        #     losses_vel.append(criterion(output_pred_vel_list[k], ground_truth_vel_list[k]))
+                        #     pred_xyz_points_list.append(output_pred_xyz_list[k].cpu().detach().numpy())
+                        #     pred_vel_points_list.append(output_pred_vel_list[k].cpu().detach().numpy())
+                        #     gt_pred_xyz_points_list.append(ground_truth_xyz_list[k].cpu().detach().numpy())
+                        #     gt_pred_vel_points_list.append(ground_truth_vel_list[k].cpu().detach().numpy())
+                        # print(losses_xyz)
+                        # print(losses_vel)
+                        a = torch.vstack(losses_xyz)
+                        a = torch.where(torch.isnan(a), torch.full_like(a, 0), a)
 
-            loss = loss_xyz + loss_vel #+ 0.02 * loss_for
-            if mode == 'train':
-                loss.backward()
-                optimizer.step()
-                scheduler.step()
+                        b = torch.vstack(losses_vel)
+                        b = torch.where(torch.isnan(b), torch.full_like(b, 0), b)
+
+                        loss = torch.mean(a) + torch.mean(b)
+                        loss1 = loss.detach_().requires_grad_(True)
+                        # print(loss)
+                        # loss.backward()
+                        losses_xyz = []
+                        losses_vel = []
+
+                            # loss_xyz = loss_xyz + criterion(output_pred_xyz_list[k], ground_truth_xyz_list[k]) / 8.
+                            # loss_vel = loss_vel + criterion(output_pred_vel_list[k], ground_truth_vel_list[k]) / 8.
+                        # loss = loss_xyz + loss_vel
+                        losssum += loss.item()
+
+                        loss1.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                        # loss = torch.tensor(0.0, device = device, requires_grad=True)
+                        # loss_xyz = torch.tensor(0.0, device = device, requires_grad=True)
+                        # loss_vel = torch.tensor(0.0, device = device, requires_grad=True)
+                    
+                
+
+            N = 0
+            N = len(output_pred_xyz_list)
             
-            sum_loss += loss.item()
+            # for j in range(len(output_pred_xyz_list)):
+            #     N += 1
+            #     loss_xyz = loss_xyz + criterion(output_pred_xyz_list[j], ground_truth_xyz_list[j])
+            #     loss_vel = loss_vel + criterion(output_pred_vel_list[j], ground_truth_vel_list[j])
+            #     pred_xyz_points_list.append(output_pred_xyz_list[j].cpu().detach().numpy())
+            #     pred_vel_points_list.append(output_pred_vel_list[j].cpu().detach().numpy())
+            #     gt_pred_xyz_points_list.append(ground_truth_xyz_list[j].cpu().detach().numpy())
+            #     gt_pred_vel_points_list.append(ground_truth_vel_list[j].cpu().detach().numpy())
+
+            # print('loss_xyz: ', loss_xyz.item())
+            # print('loss_vel: ', loss_vel.item())
+
+            # loss = (loss_xyz + loss_vel) / human_pose_numpy.shape[1] #+ 0.02 * loss_for
+            print(n)
+            print('loss: ', losssum / n)
+            # if mode == 'train':
+            #     loss.backward()
+            #     optimizer.step()
+            #     scheduler.step()
+            
+            # sum_loss += loss.item()
+            sum_loss = losssum / n
 
             tmp = pred_xyz_points_list[0].shape[0]
             K = int(tmp // point_dim)
@@ -198,6 +267,7 @@ def run(mode='train'):
             xyz_pck_res = f"xyz_acc: {xyz_acc}\nxyz_avg_acc: {xyz_avg_acc}\nxyz_cnt: {xyz_cnt}"
             print(xyz_pck_res)
 
+
             vel_acc, vel_avg_acc, vel_cnt = keypoint_pck_accuracy(
                 pred=pred_vel_topck, 
                 gt=gt_pred_vel_topck, 
@@ -205,6 +275,9 @@ def run(mode='train'):
                 mask=mask, 
                 normalize=normalize
             )
+
+
+
             vel_pck_res = f"vel_acc: {vel_acc}\nvel_avg_acc: {vel_avg_acc}\nvel_cnt: {vel_cnt}"
             print(vel_pck_res)
             print("------***------")
