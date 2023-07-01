@@ -30,18 +30,16 @@ def concat_data(file_lists, i):
     pose_first_file = True
     robot_first_file = True
 
-    human_pose_numpy = np.array([0])
     human_xyz_numpy = np.array([0])
     human_quat_numpy = np.array([0])
 
-    robot_pose_numpy = np.array([0])
     robot_xyz_numpy = np.array([0])
-    robot_quat_numpy = np.array([0])
+    robot_vel_numpy = np.array([0])
     robot_force_numpy = np.array([0])
 
     file_list = file_lists[i]
-    human_pose_list = file_list[0:25]
-    robot_joint_list = file_list[25:]
+    human_pose_list = file_list[0:7]
+    robot_joint_list = file_list[7:]
 
     for file in human_pose_list:
         temp_csv = pd.read_csv(file, header=None)
@@ -51,12 +49,10 @@ def concat_data(file_lists, i):
 
         if pose_first_file == True:
             pose_first_file = False
-            human_pose_numpy = temp_csv
             human_xyz_numpy = temp_human_xyz
             human_quat_numpy = temp_human_quat
 
         else:
-            human_pose_numpy = np.concatenate([human_pose_numpy, temp_csv], axis = 1)
             human_xyz_numpy = np.concatenate([human_xyz_numpy, temp_human_xyz], axis=1)
             human_quat_numpy = np.concatenate([human_quat_numpy, temp_human_quat], axis = 1)
         #break
@@ -65,56 +61,53 @@ def concat_data(file_lists, i):
         temp_robot_csv = pd.read_csv(robot_file)
         temp_robot_csv = np.array(temp_robot_csv)
         temp_robot_csv = np.delete(temp_robot_csv, 0, axis=1)
+
         temp_robot_xyz = temp_robot_csv[:, 2:5]
-        temp_robot_quat = temp_robot_csv[:, 5:8]
+        temp_robot_vel = temp_robot_csv[:, 5:8]
         temp_robot_force = temp_robot_csv[:, 1].reshape(-1, 1)
-        #temp_robot_csv_1 = temp_robot_csv[0]
-        #temp_robot_csv = np.insert(temp_robot_csv, 0, temp_robot_csv_1, axis = 0)
 
         if robot_first_file == True:
             robot_first_file = False
-            robot_pose_numpy = temp_robot_csv
             robot_xyz_numpy = temp_robot_xyz
-            robot_quat_numpy = temp_robot_quat
+            robot_vel_numpy = temp_robot_vel
             robot_force_numpy = temp_robot_force
 
         else:
-            robot_pose_numpy = np.concatenate([robot_pose_numpy, temp_robot_csv], axis = 1)
             robot_xyz_numpy = np.concatenate([robot_xyz_numpy, temp_robot_xyz], axis = 1)
-            robot_quat_numpy = np.concatenate([robot_quat_numpy, temp_robot_quat], axis = 1)
+            robot_vel_numpy = np.concatenate([robot_vel_numpy, temp_robot_vel], axis = 1)
             robot_force_numpy = np.concatenate([robot_force_numpy, temp_robot_force], axis = 1)
         #break
 
-    return human_pose_numpy, robot_force_numpy, robot_pose_numpy, human_xyz_numpy, human_quat_numpy, robot_xyz_numpy, robot_quat_numpy
+    return human_xyz_numpy, human_quat_numpy, robot_xyz_numpy, robot_vel_numpy,robot_force_numpy
 
 
 class PoseDataset(Dataset):
     def __init__(self, data_root, mode='train'):
         if mode == 'train':
-            txt_file = os.path.join(data_root, "train_file.txt")
+            txt_file = os.path.join(data_root, "train_file_copy.txt")
         elif mode == 'test':
-            txt_file = os.path.join(data_root, "test_file.txt")
+            txt_file = os.path.join(data_root, "test_file_copy.txt")
         else:
             txt_file = '' 
         
         self.file_list = read_lines(txt_file)
-        self.human_joints_num = 25
+        self.human_joints_num = 7
         #self.file_index = i
+
 
     def __len__(self):
         return len(self.file_list)
+        # return 2
 
     def __getitem__(self, item):
-        human_pose_numpy, robot_force_numpy, robot_pose_numpy, human_xyz_numpy, human_quat_numpy, robot_xyz_numpy, robot_quat_numpy = concat_data(self.file_list, item)
-        human_pose_numpy = torch.from_numpy(human_pose_numpy.astype(np.float32))
-        robot_pose_numpy = torch.from_numpy(robot_pose_numpy.astype(np.float32))
+        human_xyz_numpy, human_quat_numpy, robot_xyz_numpy, robot_quat_numpy,robot_force_numpy = concat_data(self.file_list, item)
         human_xyz_numpy = torch.from_numpy(human_xyz_numpy.astype(np.float32))
         human_quat_numpy = torch.from_numpy(human_quat_numpy.astype(np.float32))
         robot_xyz_numpy = torch.from_numpy(robot_xyz_numpy.astype(np.float32))
         robot_quat_numpy = torch.from_numpy(robot_quat_numpy.astype(np.float32))
         robot_force_numpy = torch.from_numpy(robot_force_numpy.astype(np.float32))
 
-        return human_pose_numpy, robot_force_numpy, robot_pose_numpy, human_xyz_numpy, human_quat_numpy, robot_xyz_numpy, robot_quat_numpy
+        return human_xyz_numpy, human_quat_numpy, robot_xyz_numpy, robot_quat_numpy,robot_force_numpy
 
 
 if __name__ == "__main__":

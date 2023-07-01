@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 def init_weights(m):
@@ -41,14 +42,14 @@ class LSTMTaggerSep(nn.Module):
 
         human_embeddings = self.human_input_embedding(human_inputs)
 
-        h_0_xyz = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_xyz = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        h_0_xyz = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        c_0_xyz = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
-        h_0_vel = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_vel = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        h_0_vel = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        c_0_vel = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
-        h_0_for = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_for = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        h_0_for = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        c_0_for = torch.randn(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
         lstm_xyz_out, _ = self.lstm_xyz(human_embeddings, (h_0_xyz, c_0_xyz))
         lstm_vel_out, _ = self.lstm_vel(human_embeddings, (h_0_vel, c_0_vel))
@@ -88,14 +89,14 @@ class LSTMPreSep(nn.Module):
 
         human_embeddings = self.human_input_embedding(human_inputs)
 
-        h_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        h_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        c_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
-        h_0_vel = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_vel = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        h_0_vel = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        c_0_vel = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
-        h_0_for = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_for = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        h_0_for = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        c_0_for = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
         lstm_xyz_out, _ = self.lstm_xyz(human_embeddings, (h_0_xyz, c_0_xyz))
         lstm_vel_out, _ = self.lstm_vel(human_embeddings, (h_0_vel, c_0_vel))
@@ -154,8 +155,8 @@ class TransformerTraggerSeq(nn.Module):
     def forward(self, human_inputs):
         human_embeddings = self.human_input_embedding(human_inputs)
 
-        h_0_xyz = torch.ones(1, 1, self.embedding_dim).to("mps")
-        h_0_vel = torch.ones(1, 1, self.embedding_dim).to("mps")
+        h_0_xyz = torch.ones(1, 1, self.embedding_dim).to('cuda')
+        h_0_vel = torch.ones(1, 1, self.embedding_dim).to('cuda')
 
         trans_xyz_out = self.trans_xyz(human_embeddings, h_0_xyz)
         trans_vel_out = self.trans_vel(human_embeddings, h_0_vel)
@@ -174,10 +175,13 @@ class KimoreFusionModel(nn.Module):
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.num_directions = 1
-        self.human_input_embedding = nn.Linear(159, self.embedding_dim)
+        self.human_input_embedding = nn.Linear(49, self.embedding_dim)
         self.batch_size = 1
-
         self.num_layers = num_layers
+        self.h_0_xyz = torch.zeros(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        self.c_0_xyz = torch.zeros(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        self.h_0_vel = torch.ones(1, 1, self.embedding_dim).to('cuda')
+
         #self.robot_input_embedding = nn.Linear(84, self.hidden_dim)
         self.lstm_c_embedding = nn.Linear(84, self.hidden_dim)
 
@@ -208,19 +212,32 @@ class KimoreFusionModel(nn.Module):
         self.leaky_relu = nn.LeakyReLU()
         self.tanh = nn.Tanh()
 
+    def init_state(self):
+        self.h_0_xyz = torch.zeros(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        self.c_0_xyz = torch.zeros(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        self.h_0_vel = torch.ones(1, 1, self.embedding_dim).to('cuda')
+
     def forward(self, human_inputs):
         human_embeddings = self.human_input_embedding(human_inputs)
 
-        h_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
-        c_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to("mps")
+        # h_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
+        # c_0_xyz = torch.ones(self.num_directions * self.num_layers, self.batch_size, self.hidden_dim).to('cuda')
 
-        h_0_vel = torch.ones(1, 1, self.embedding_dim).to("mps")
+        # h_0_vel = torch.ones(1, 1, self.embedding_dim).to('cuda')
+        h_0_xyz = self.h_0_xyz.data
+        c_0_xyz = self.c_0_xyz.data
 
-        xyz_out, _ = self.lstm_xyz(human_embeddings, (h_0_xyz, c_0_xyz))
-        vel_out = self.trans_vel(human_embeddings, h_0_vel)
+        h_0_vel = self.h_0_vel
 
-        output_embedding_xyz = self.tanh(self.leaky_relu(self.output_xyz_embedding(xyz_out)))
-        output_embedding_vel =self.relu(self.output_vel_embedding(vel_out))
 
-        return output_embedding_xyz, output_embedding_vel
-        
+        xyz_out, (h_0_xyz_, c_0_xyz_) = self.lstm_xyz(human_embeddings, (h_0_xyz, c_0_xyz))
+        self.h_0_xyz = h_0_xyz_
+        self.c_0_xyz = c_0_xyz_
+        # vel_out = self.trans_vel(human_embeddings, h_0_vel)
+
+        output_embedding_xyz = self.tanh(self.output_xyz_embedding(xyz_out))
+        # output_embedding_vel = self.leaky_relu(self.output_vel_embedding(vel_out))
+        output_embedding_xyz = F.normalize(output_embedding_xyz, dim=-1)
+        # output_embedding_vel = F.normalize(output_embedding_vel, dim=2)
+
+        return output_embedding_xyz
